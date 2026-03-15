@@ -13,8 +13,9 @@ export async function POST(request) {
     const questions = JSON.parse(questionsData || '[]')
 
     // 1. Whisper ile ses → metin
+    const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
     const whisperFormData = new FormData()
-    whisperFormData.append('file', audioFile)
+    whisperFormData.append('file', new Blob([audioBuffer]), audioFile.name)
     whisperFormData.append('model', 'whisper-1')
     whisperFormData.append('language', 'tr')
 
@@ -44,9 +45,9 @@ export async function POST(request) {
       if (q.answer_5) answers.push(`5: ${q.answer_5}`)
       
       return `
-SORU ${i + 1}: ${q.text}
+SORU ${i + 1} (ID: ${q.id}): ${q.text}
 Cevap Seçenekleri:
-${answers.join('\n')}
+${answers.length > 0 ? answers.join('\n') : '1: Çok Yetersiz, 2: Yetersiz, 3: Orta, 4: İyi, 5: Mükemmel'}
 `
     }).join('\n---\n')
 
@@ -80,51 +81,4 @@ SADECE JSON formatında yanıt ver, başka bir şey yazma:
           {
             role: 'user',
             content: `GÖRÜŞME METNİ:
-${transcript}
-
----
-
-DEĞERLENDİRİLECEK SORULAR:
-${questionsPrompt}
-
-Lütfen her soru için 1-5 arası puan ver ve gerekçesini açıkla.`
-          }
-        ],
-        temperature: 0.3
-      })
-    })
-
-    if (!gptResponse.ok) {
-      const error = await gptResponse.json()
-      return NextResponse.json({ error: 'AI analiz hatası: ' + (error.error?.message || 'Bilinmeyen') }, { status: 500 })
-    }
-
-    const gptData = await gptResponse.json()
-    const aiContent = gptData.choices[0]?.message?.content || ''
-
-    // JSON parse et
-    let result
-    try {
-      const jsonMatch = aiContent.match(/\{[\s\S]*\}/)
-      result = jsonMatch ? JSON.parse(jsonMatch[0]) : { scores: [], summary: '' }
-    } catch (e) {
-      result = { scores: [], summary: aiContent }
-    }
-
-    return NextResponse.json({
-      success: true,
-      transcript,
-      analysis: result
-    })
-
-  } catch (error) {
-    console.error('AI Evaluate Error:', error)
-    return NextResponse.json({ error: 'Sunucu hatası: ' + error.message }, { status: 500 })
-  }
-}
-
-export const config = {
-  api: {
-    bodyParser: false
-  }
-}
+${trans
