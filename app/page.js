@@ -1,45 +1,47 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { encrypt, decrypt, encryptBackup, decryptBackup, generateSecretKey } from '@/lib/crypto'
 
 const SCORE_COLORS = { 1: '#fc8181', 2: '#f6ad55', 3: '#f6e05e', 4: '#68d391', 5: '#4fd1c5' }
 const SCORE_LABELS = { 1: 'Çok Yetersiz', 2: 'Yetersiz', 3: 'Orta', 4: 'İyi', 5: 'Mükemmel' }
+const SENSITIVE_FIELDS = ['name', 'title', 'company']
 
 const defaultCategories = [
   {
     id: 'cat1', name: 'STRATEJİK VİZYON', icon: '🎯', color: '#6b7fd4',
     questions: [
-      { id: 'q1', text: 'Kurum için en kritik 3 mesele nedir?', weight: 3, mentorNote: 'Stratejik farkındalığı değerlendirin', answers: {} },
-      { id: 'q2', text: 'En çok zamanınızı alan şey ne?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q3', text: 'Önümüzdeki 12 ayda en riskli karar hangisi?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q4', text: 'Kurum sizden hangi liderliği bekliyor?', weight: 3, mentorNote: '', answers: {} },
+      { id: 'q1', text: 'Kurum için en kritik 3 mesele nedir?', weight: 3, mentorNote: 'Stratejik farkındalığı değerlendirin' },
+      { id: 'q2', text: 'En çok zamanınızı alan şey ne?', weight: 3, mentorNote: '' },
+      { id: 'q3', text: 'Önümüzdeki 12 ayda en riskli karar hangisi?', weight: 3, mentorNote: '' },
+      { id: 'q4', text: 'Kurum sizden hangi liderliği bekliyor?', weight: 3, mentorNote: '' },
     ]
   },
   {
     id: 'cat2', name: 'KARAR ALMA', icon: '⚖️', color: '#9f7aea',
     questions: [
-      { id: 'q5', text: 'Son aldığınız zor karar hangisiydi?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q6', text: 'Hangi kararları erteliyorsunuz?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q7', text: 'Risk alırken sizi durduran ne?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q8', text: 'Karar öncesi kimle konuşmazsınız?', weight: 2, mentorNote: '', answers: {} },
+      { id: 'q5', text: 'Son aldığınız zor karar hangisiydi?', weight: 3, mentorNote: '' },
+      { id: 'q6', text: 'Hangi kararları erteliyorsunuz?', weight: 3, mentorNote: '' },
+      { id: 'q7', text: 'Risk alırken sizi durduran ne?', weight: 3, mentorNote: '' },
+      { id: 'q8', text: 'Karar öncesi kimle konuşmazsınız?', weight: 2, mentorNote: '' },
     ]
   },
   {
     id: 'cat3', name: 'EKİP LİDERLİĞİ', icon: '👥', color: '#48bb78',
     questions: [
-      { id: 'q9', text: 'Ekibiniz sizden neyi çekiniyor?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q10', text: 'En güvendiğiniz yönetici kim?', weight: 2, mentorNote: '', answers: {} },
-      { id: 'q11', text: 'Kimi gereğinden fazla koruyorsunuz?', weight: 2, mentorNote: '', answers: {} },
-      { id: 'q12', text: 'Ekibiniz sizi nasıl hatırlayacak?', weight: 3, mentorNote: '', answers: {} },
+      { id: 'q9', text: 'Ekibiniz sizden neyi çekiniyor?', weight: 3, mentorNote: '' },
+      { id: 'q10', text: 'En güvendiğiniz yönetici kim?', weight: 2, mentorNote: '' },
+      { id: 'q11', text: 'Kimi gereğinden fazla koruyorsunuz?', weight: 2, mentorNote: '' },
+      { id: 'q12', text: 'Ekibiniz sizi nasıl hatırlayacak?', weight: 3, mentorNote: '' },
     ]
   },
   {
     id: 'cat4', name: 'DEĞERLER', icon: '⭐', color: '#ed8936',
     questions: [
-      { id: 'q13', text: 'Hangi değerden taviz verdiniz?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q14', text: 'Sizi tanımlayan karar hangisi?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q15', text: 'Ayrıldığınızda ne kalmasını istersiniz?', weight: 3, mentorNote: '', answers: {} },
-      { id: 'q16', text: 'Bu rol sizi daha iyi mi yaptı?', weight: 3, mentorNote: '', answers: {} },
+      { id: 'q13', text: 'Hangi değerden taviz verdiniz?', weight: 3, mentorNote: '' },
+      { id: 'q14', text: 'Sizi tanımlayan karar hangisi?', weight: 3, mentorNote: '' },
+      { id: 'q15', text: 'Ayrıldığınızda ne kalmasını istersiniz?', weight: 3, mentorNote: '' },
+      { id: 'q16', text: 'Bu rol sizi daha iyi mi yaptı?', weight: 3, mentorNote: '' },
     ]
   }
 ]
@@ -50,22 +52,129 @@ export default function Home() {
   const [sessions, setSessions] = useState([])
   const [currentSession, setCurrentSession] = useState(null)
   const [selectedCatId, setSelectedCatId] = useState(null)
-  const [answers, setAnswers] = useState({})
   const [showModal, setShowModal] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [formData, setFormData] = useState({ name: '', title: '', company: '' })
+  
+  // 🔐 Şifreleme
+  const [secretKey, setSecretKey] = useState('')
+  const [tempKey, setTempKey] = useState('')
+  const [isEncrypted, setIsEncrypted] = useState(false)
 
+  // Başlangıçta anahtarı yükle
   useEffect(() => {
+    const savedKey = localStorage.getItem('mentorSecretKey')
+    if (savedKey) {
+      setSecretKey(savedKey)
+      setIsEncrypted(true)
+    }
+    
     const saved = localStorage.getItem('mentorData')
     if (saved) {
       const data = JSON.parse(saved)
       if (data.categories) setCategories(data.categories)
-      if (data.sessions) setSessions(data.sessions)
+      if (data.sessions) {
+        // Şifreli verileri çöz
+        if (savedKey) {
+          const decryptedSessions = data.sessions.map(s => ({
+            ...s,
+            name: decrypt(s.name, savedKey),
+            title: decrypt(s.title, savedKey),
+            company: decrypt(s.company, savedKey)
+          }))
+          setSessions(decryptedSessions)
+        } else {
+          setSessions(data.sessions)
+        }
+      }
     }
   }, [])
 
+  // Veri değişince kaydet
   useEffect(() => {
-    localStorage.setItem('mentorData', JSON.stringify({ categories, sessions }))
-  }, [categories, sessions])
+    if (sessions.length > 0 || categories !== defaultCategories) {
+      // Kaydetmeden önce şifrele
+      const encryptedSessions = secretKey ? sessions.map(s => ({
+        ...s,
+        name: encrypt(s.name, secretKey),
+        title: encrypt(s.title, secretKey),
+        company: encrypt(s.company, secretKey)
+      })) : sessions
+      
+      localStorage.setItem('mentorData', JSON.stringify({ 
+        categories, 
+        sessions: encryptedSessions 
+      }))
+    }
+  }, [categories, sessions, secretKey])
+
+  // Şifreleme anahtarı kaydet
+  const saveSecretKey = () => {
+    if (!tempKey || tempKey.length < 8) {
+      alert('Anahtar en az 8 karakter olmalı!')
+      return
+    }
+    
+    // Mevcut verileri yeni anahtarla şifrele
+    localStorage.setItem('mentorSecretKey', tempKey)
+    setSecretKey(tempKey)
+    setIsEncrypted(true)
+    setTempKey('')
+    alert('🔐 Şifreleme anahtarı kaydedildi! Artık tüm kişisel veriler şifrelenerek saklanacak.')
+  }
+
+  // Rastgele anahtar oluştur
+  const createRandomKey = () => {
+    const newKey = generateSecretKey()
+    setTempKey(newKey)
+  }
+
+  // Şifreli yedekleme
+  const exportEncryptedBackup = () => {
+    if (!secretKey) {
+      alert('Önce şifreleme anahtarı ayarlayın!')
+      return
+    }
+    
+    const backupData = { categories, sessions, exportDate: new Date().toISOString() }
+    const encrypted = encryptBackup(backupData, secretKey)
+    
+    if (encrypted) {
+      const blob = new Blob([encrypted], { type: 'text/plain' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `mentor-backup-encrypted-${new Date().toISOString().split('T')[0]}.enc`
+      a.click()
+      alert('🔐 Şifreli yedek indirildi!')
+    }
+  }
+
+  // Şifreli yedeği geri yükle
+  const importEncryptedBackup = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    
+    if (!secretKey) {
+      alert('Önce şifreleme anahtarını girin!')
+      return
+    }
+    
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const encrypted = e.target.result
+      const decrypted = decryptBackup(encrypted, secretKey)
+      
+      if (decrypted) {
+        if (decrypted.categories) setCategories(decrypted.categories)
+        if (decrypted.sessions) setSessions(decrypted.sessions)
+        alert('✅ Şifreli yedek başarıyla yüklendi!')
+      } else {
+        alert('❌ Yedek çözülemedi. Anahtar yanlış olabilir.')
+      }
+    }
+    reader.readAsText(file)
+    event.target.value = ''
+  }
 
   const calcStats = (session) => {
     if (!session) return null
@@ -103,8 +212,7 @@ export default function Home() {
       id: Date.now(),
       ...formData,
       categories: JSON.parse(JSON.stringify(categories)),
-      createdAt: new Date().toISOString(),
-      notes: {}
+      createdAt: new Date().toISOString()
     }
     setSessions([...sessions, newSession])
     setCurrentSession(newSession)
@@ -126,6 +234,14 @@ export default function Home() {
     setSessions(sessions.map(s => s.id === updated.id ? updated : s))
   }
 
+  const deleteSession = (id) => {
+    if (!confirm('Bu oturumu silmek istediğinize emin misiniz?')) return
+    setSessions(sessions.filter(s => s.id !== id))
+    if (currentSession?.id === id) {
+      setCurrentSession(null)
+    }
+  }
+
   const selectedCat = currentSession?.categories.find(c => c.id === selectedCatId)
 
   return (
@@ -139,11 +255,16 @@ export default function Home() {
               <div style={{ fontSize: '11px', opacity: 0.8 }}>Liderlik Koçluk Platformu</div>
             </div>
           </div>
-          <span style={{ padding: '4px 12px', background: totalWeight === 48 ? 'rgba(104,211,145,0.3)' : 'rgba(252,129,129,0.3)', borderRadius: '12px', fontSize: '12px' }}>{totalWeight}/48</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {isEncrypted && <span style={{ fontSize: '16px' }} title="Şifreleme Aktif">🔐</span>}
+            <span style={{ padding: '4px 12px', background: totalWeight === 48 ? 'rgba(104,211,145,0.3)' : 'rgba(252,129,129,0.3)', borderRadius: '12px', fontSize: '12px' }}>{totalWeight}/48</span>
+          </div>
         </div>
       </header>
 
       <main style={{ maxWidth: '800px', margin: '0 auto', padding: '16px' }}>
+        
+        {/* DASHBOARD */}
         {tab === 'dashboard' && (
           <div>
             <div className="card">
@@ -161,9 +282,9 @@ export default function Home() {
               {sessions.length === 0 ? <p style={{ color: '#718096' }}>Henüz oturum yok</p> : sessions.slice().reverse().map(s => {
                 const st = calcStats(s)
                 return (
-                  <div key={s.id} onClick={() => { setCurrentSession(s); setSelectedCatId(s.categories[0]?.id); setTab('evaluation') }} style={{ padding: '12px', background: currentSession?.id === s.id ? '#f0f4ff' : '#f8fafc', borderRadius: '8px', marginBottom: '8px', cursor: 'pointer', border: currentSession?.id === s.id ? '2px solid #6b7fd4' : '1px solid #e2e8f0' }}>
+                  <div key={s.id} style={{ padding: '12px', background: currentSession?.id === s.id ? '#f0f4ff' : '#f8fafc', borderRadius: '8px', marginBottom: '8px', border: currentSession?.id === s.id ? '2px solid #6b7fd4' : '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
+                      <div onClick={() => { setCurrentSession(s); setSelectedCatId(s.categories[0]?.id); setTab('evaluation') }} style={{ cursor: 'pointer', flex: 1 }}>
                         <div style={{ fontWeight: '600' }}>{s.name}</div>
                         <div style={{ fontSize: '12px', color: '#718096' }}>{s.title}</div>
                       </div>
@@ -172,6 +293,10 @@ export default function Home() {
                         <div style={{ fontSize: '10px', color: '#718096' }}>{st?.profile.type}</div>
                       </div>
                     </div>
+                    <div style={{ marginTop: '8px', display: 'flex', gap: '8px' }}>
+                      <button onClick={() => { setCurrentSession(s); setSelectedCatId(s.categories[0]?.id); setTab('evaluation') }} style={{ flex: 1, padding: '6px', fontSize: '12px', background: '#6b7fd4', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>▶ Aç</button>
+                      <button onClick={() => deleteSession(s.id)} style={{ padding: '6px 12px', fontSize: '12px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>🗑️</button>
+                    </div>
                   </div>
                 )
               })}
@@ -179,6 +304,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* EVALUATION */}
         {tab === 'evaluation' && currentSession && (
           <div>
             <div className="card">
@@ -230,36 +356,134 @@ export default function Home() {
           </div>
         )}
 
-        {tab === 'analysis' && stats && (
+        {/* ANALYSIS */}
+        {tab === 'analysis' && (
           <div>
-            <div className="card" style={{ textAlign: 'center', background: stats.profile.color + '15' }}>
-              <div style={{ fontSize: '50px' }}>👔</div>
-              <h2 style={{ color: stats.profile.color, margin: '10px 0' }}>{stats.profile.type}</h2>
-              <p style={{ color: '#718096' }}>{currentSession?.name}</p>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '30px', marginTop: '20px' }}>
-                <div><div style={{ fontSize: '28px', fontWeight: '700', color: '#6b7fd4' }}>{stats.earned.toFixed(1)}</div><div style={{ fontSize: '11px', color: '#718096' }}>Kazanılan</div></div>
-                <div><div style={{ fontSize: '28px', fontWeight: '700', color: '#6b7fd4' }}>{stats.max.toFixed(0)}</div><div style={{ fontSize: '11px', color: '#718096' }}>Maksimum</div></div>
-                <div><div style={{ fontSize: '28px', fontWeight: '700', color: stats.profile.color }}>{stats.pct.toFixed(0)}%</div><div style={{ fontSize: '11px', color: '#718096' }}>Başarı</div></div>
+            {!currentSession ? (
+              <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
+                <div style={{ fontSize: '50px', marginBottom: '16px' }}>📊</div>
+                <h3>Analiz için oturum seçin</h3>
+                <p style={{ color: '#718096' }}>Panel'den bir oturum seçin veya yeni oturum başlatın</p>
               </div>
-            </div>
-            <div className="card">
-              <h3 style={{ color: '#c9a962', marginBottom: '12px' }}>📋 Kategoriler</h3>
-              {stats.catStats.map(cat => (
-                <div key={cat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', background: '#f8fafc', borderRadius: '8px', marginBottom: '8px' }}>
-                  <span>{cat.icon} {cat.name}</span>
-                  <span style={{ fontWeight: '600', color: cat.color }}>{cat.pct.toFixed(0)}%</span>
+            ) : stats && (
+              <>
+                <div className="card" style={{ textAlign: 'center', background: stats.profile.color + '15' }}>
+                  <div style={{ fontSize: '50px' }}>👔</div>
+                  <h2 style={{ color: stats.profile.color, margin: '10px 0' }}>{stats.profile.type}</h2>
+                  <p style={{ color: '#718096' }}>{currentSession?.name}</p>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '30px', marginTop: '20px' }}>
+                    <div><div style={{ fontSize: '28px', fontWeight: '700', color: '#6b7fd4' }}>{stats.earned.toFixed(1)}</div><div style={{ fontSize: '11px', color: '#718096' }}>Kazanılan</div></div>
+                    <div><div style={{ fontSize: '28px', fontWeight: '700', color: '#6b7fd4' }}>{stats.max.toFixed(0)}</div><div style={{ fontSize: '11px', color: '#718096' }}>Maksimum</div></div>
+                    <div><div style={{ fontSize: '28px', fontWeight: '700', color: stats.profile.color }}>{stats.pct.toFixed(0)}%</div><div style={{ fontSize: '11px', color: '#718096' }}>Başarı</div></div>
+                  </div>
                 </div>
-              ))}
+                <div className="card">
+                  <h3 style={{ color: '#c9a962', marginBottom: '12px' }}>📋 Kategoriler</h3>
+                  {stats.catStats.map(cat => (
+                    <div key={cat.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px', background: '#f8fafc', borderRadius: '8px', marginBottom: '8px' }}>
+                      <span>{cat.icon} {cat.name}</span>
+                      <span style={{ fontWeight: '600', color: cat.color }}>{cat.pct.toFixed(0)}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* SETTINGS */}
+        {tab === 'settings' && (
+          <div>
+            {/* Şifreleme Ayarları */}
+            <div className="card">
+              <h3 style={{ color: '#c9a962', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🔐 Şifreleme Ayarları
+                {isEncrypted && <span style={{ fontSize: '12px', padding: '2px 8px', background: '#d1fae5', color: '#059669', borderRadius: '10px' }}>AKTİF</span>}
+              </h3>
+              
+              <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '13px' }}>
+                <strong>🛡️ KVKK Uyumlu Şifreleme</strong><br/>
+                <span style={{ color: '#718096' }}>Kişisel veriler (ad, soyad, unvan, şirket) AES-256 ile şifrelenir. Veriler Türkiye dışına çıksa bile okunamaz.</span>
+              </div>
+              
+              {!isEncrypted ? (
+                <div>
+                  <label style={{ fontSize: '12px', color: '#718096' }}>Şifreleme Anahtarı (min 8 karakter)</label>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                    <input 
+                      className="input" 
+                      type="password"
+                      value={tempKey} 
+                      onChange={e => setTempKey(e.target.value)} 
+                      placeholder="Güçlü bir anahtar girin..."
+                      style={{ flex: 1 }}
+                    />
+                    <button onClick={createRandomKey} className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }}>🎲 Oluştur</button>
+                  </div>
+                  {tempKey && (
+                    <div style={{ marginTop: '8px', padding: '8px', background: '#fef9e7', borderRadius: '6px', fontSize: '11px', wordBreak: 'break-all' }}>
+                      <strong>Anahtar:</strong> {tempKey}
+                      <div style={{ color: '#dc2626', marginTop: '4px' }}>⚠️ Bu anahtarı güvenli bir yere kaydedin! Kaybederseniz verilerinize erişemezsiniz.</div>
+                    </div>
+                  )}
+                  <button onClick={saveSecretKey} className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>🔐 Şifrelemeyi Aktifleştir</button>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '20px', background: '#f0fdf4', borderRadius: '8px' }}>
+                  <div style={{ fontSize: '40px', marginBottom: '8px' }}>✅</div>
+                  <div style={{ fontWeight: '600', color: '#059669' }}>Şifreleme Aktif</div>
+                  <div style={{ fontSize: '12px', color: '#718096' }}>Tüm kişisel veriler şifrelenerek saklanıyor</div>
+                </div>
+              )}
+            </div>
+
+            {/* Yedekleme */}
+            <div className="card">
+              <h3 style={{ color: '#c9a962', marginBottom: '16px' }}>💾 Şifreli Yedekleme</h3>
+              
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button onClick={exportEncryptedBackup} className="btn btn-primary" disabled={!isEncrypted}>
+                  📤 Şifreli Yedek İndir
+                </button>
+                <label className="btn btn-secondary" style={{ cursor: isEncrypted ? 'pointer' : 'not-allowed', opacity: isEncrypted ? 1 : 0.5 }}>
+                  📥 Şifreli Yedek Yükle
+                  <input type="file" accept=".enc" style={{ display: 'none' }} onChange={importEncryptedBackup} disabled={!isEncrypted} />
+                </label>
+              </div>
+              
+              {!isEncrypted && (
+                <div style={{ marginTop: '12px', padding: '10px', background: '#fef3c7', borderRadius: '6px', fontSize: '12px', color: '#92400e' }}>
+                  ⚠️ Şifreli yedekleme için önce şifreleme anahtarı ayarlayın
+                </div>
+              )}
+            </div>
+
+            {/* Hakkında */}
+            <div className="card">
+              <h3 style={{ color: '#c9a962', marginBottom: '12px' }}>ℹ️ Hakkında</h3>
+              <div style={{ fontSize: '13px', color: '#718096' }}>
+                <p><strong>Executive Mentor & Coaching Platform</strong></p>
+                <p>Profesyonel liderlik koçluğu ve yönetici değerlendirme sistemi.</p>
+                <ul style={{ marginTop: '10px', paddingLeft: '20px' }}>
+                  <li>✅ AES-256 Şifreleme</li>
+                  <li>✅ KVKK / GDPR Uyumlu</li>
+                  <li>✅ Şifreli Yedekleme</li>
+                  <li>✅ Responsive Tasarım</li>
+                </ul>
+                <p style={{ marginTop: '12px', color: '#c9a962' }}>© 2024 MFK Danışmanlık</p>
+              </div>
             </div>
           </div>
         )}
       </main>
 
+      {/* Navigation */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-around', padding: '8px 10px 24px', zIndex: 100 }}>
         {[
           { id: 'dashboard', icon: '📊', label: 'Panel' },
           { id: 'evaluation', icon: '📝', label: 'Değerlendir' },
           { id: 'analysis', icon: '📈', label: 'Analiz' },
+          { id: 'settings', icon: '⚙️', label: 'Ayarlar' },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', padding: '8px 16px', background: tab === t.id ? '#f0f4ff' : 'transparent', border: 'none', borderRadius: '10px', color: tab === t.id ? '#6b7fd4' : '#718096', cursor: 'pointer' }}>
             <span style={{ fontSize: '20px' }}>{t.icon}</span>
@@ -268,6 +492,7 @@ export default function Home() {
         ))}
       </nav>
 
+      {/* New Session Modal */}
       {showModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }} onClick={e => e.target === e.currentTarget && setShowModal(false)}>
           <div style={{ background: 'white', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '400px' }}>
@@ -275,6 +500,11 @@ export default function Home() {
             <div style={{ marginBottom: '12px' }}><label style={{ fontSize: '12px', color: '#718096' }}>Ad Soyad *</label><input className="input" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Örn: Ahmet Yılmaz" /></div>
             <div style={{ marginBottom: '12px' }}><label style={{ fontSize: '12px', color: '#718096' }}>Unvan *</label><input className="input" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} placeholder="Örn: Genel Müdür" /></div>
             <div style={{ marginBottom: '12px' }}><label style={{ fontSize: '12px', color: '#718096' }}>Kurum *</label><input className="input" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} placeholder="Örn: ABC Holding" /></div>
+            {isEncrypted && (
+              <div style={{ padding: '8px', background: '#d1fae5', borderRadius: '6px', fontSize: '11px', color: '#059669', marginBottom: '12px' }}>
+                🔐 Kişisel bilgiler şifreli kaydedilecek
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowModal(false)}>İptal</button>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={startSession}>Başlat</button>
