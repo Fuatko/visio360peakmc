@@ -5,7 +5,12 @@ import { encrypt, decrypt, encryptBackup, decryptBackup, generateSecretKey } fro
 
 const SCORE_COLORS = { 1: '#fc8181', 2: '#f6ad55', 3: '#f6e05e', 4: '#68d391', 5: '#4fd1c5' }
 const SCORE_LABELS = { 1: 'Çok Yetersiz', 2: 'Yetersiz', 3: 'Orta', 4: 'İyi', 5: 'Mükemmel' }
-const SENSITIVE_FIELDS = ['name', 'title', 'company']
+
+// 🔐 Süper Admin
+const SUPER_ADMIN = {
+  email: 'fuat@servispro.com.tr',
+  role: 'super_admin'
+}
 
 const defaultCategories = [
   {
@@ -47,13 +52,22 @@ const defaultCategories = [
 ]
 
 export default function Home() {
+  // 🔐 Auth State
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isFirstLogin, setIsFirstLogin] = useState(false)
+  const [loginEmail, setLoginEmail] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [currentUser, setCurrentUser] = useState(null)
+
   const [tab, setTab] = useState('dashboard')
   const [categories, setCategories] = useState(defaultCategories)
   const [sessions, setSessions] = useState([])
   const [currentSession, setCurrentSession] = useState(null)
   const [selectedCatId, setSelectedCatId] = useState(null)
   const [showModal, setShowModal] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
   const [formData, setFormData] = useState({ name: '', title: '', company: '' })
   
   // 🔐 Şifreleme
@@ -61,20 +75,34 @@ export default function Home() {
   const [tempKey, setTempKey] = useState('')
   const [isEncrypted, setIsEncrypted] = useState(false)
 
-  // Başlangıçta anahtarı yükle
+  // Başlangıçta login durumunu kontrol et
   useEffect(() => {
+    const savedUser = localStorage.getItem('mentorCurrentUser')
+    const savedPassword = localStorage.getItem('mentorAdminPassword')
+    
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser))
+      setIsLoggedIn(true)
+    }
+    
+    // Şifre hiç kaydedilmemişse ilk giriş
+    if (!savedPassword) {
+      setIsFirstLogin(true)
+    }
+    
+    // Şifreleme anahtarı
     const savedKey = localStorage.getItem('mentorSecretKey')
     if (savedKey) {
       setSecretKey(savedKey)
       setIsEncrypted(true)
     }
     
+    // Veriler
     const saved = localStorage.getItem('mentorData')
     if (saved) {
       const data = JSON.parse(saved)
       if (data.categories) setCategories(data.categories)
       if (data.sessions) {
-        // Şifreli verileri çöz
         if (savedKey) {
           const decryptedSessions = data.sessions.map(s => ({
             ...s,
@@ -93,7 +121,6 @@ export default function Home() {
   // Veri değişince kaydet
   useEffect(() => {
     if (sessions.length > 0 || categories !== defaultCategories) {
-      // Kaydetmeden önce şifrele
       const encryptedSessions = secretKey ? sessions.map(s => ({
         ...s,
         name: encrypt(s.name, secretKey),
@@ -108,37 +135,94 @@ export default function Home() {
     }
   }, [categories, sessions, secretKey])
 
-  // Şifreleme anahtarı kaydet
+  // 🔐 İlk şifre belirleme
+  const handleSetPassword = () => {
+    if (!newPassword || newPassword.length < 6) {
+      setLoginError('Şifre en az 6 karakter olmalı!')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setLoginError('Şifreler eşleşmiyor!')
+      return
+    }
+    
+    // Şifreyi şifreli kaydet
+    const encryptedPass = encrypt(newPassword, 'mentor_salt_2024')
+    localStorage.setItem('mentorAdminPassword', encryptedPass)
+    setIsFirstLogin(false)
+    setLoginError('')
+    setNewPassword('')
+    setConfirmPassword('')
+  }
+
+  // 🔐 Giriş yap
+  const handleLogin = () => {
+    setLoginError('')
+    
+    if (loginEmail !== SUPER_ADMIN.email) {
+      setLoginError('Geçersiz email adresi!')
+      return
+    }
+    
+    const savedPassword = localStorage.getItem('mentorAdminPassword')
+    if (!savedPassword) {
+      setLoginError('Önce şifre belirlemeniz gerekiyor!')
+      setIsFirstLogin(true)
+      return
+    }
+    
+    const decryptedPass = decrypt(savedPassword, 'mentor_salt_2024')
+    if (loginPassword !== decryptedPass) {
+      setLoginError('Şifre hatalı!')
+      return
+    }
+    
+    const user = {
+      email: SUPER_ADMIN.email,
+      role: SUPER_ADMIN.role,
+      loginTime: new Date().toISOString()
+    }
+    
+    localStorage.setItem('mentorCurrentUser', JSON.stringify(user))
+    setCurrentUser(user)
+    setIsLoggedIn(true)
+    setLoginEmail('')
+    setLoginPassword('')
+  }
+
+  // 🔐 Çıkış yap
+  const handleLogout = () => {
+    localStorage.removeItem('mentorCurrentUser')
+    setCurrentUser(null)
+    setIsLoggedIn(false)
+    setTab('dashboard')
+  }
+
+  // Şifreleme fonksiyonları
   const saveSecretKey = () => {
     if (!tempKey || tempKey.length < 8) {
       alert('Anahtar en az 8 karakter olmalı!')
       return
     }
-    
-    // Mevcut verileri yeni anahtarla şifrele
     localStorage.setItem('mentorSecretKey', tempKey)
     setSecretKey(tempKey)
     setIsEncrypted(true)
     setTempKey('')
-    alert('🔐 Şifreleme anahtarı kaydedildi! Artık tüm kişisel veriler şifrelenerek saklanacak.')
+    alert('🔐 Şifreleme anahtarı kaydedildi!')
   }
 
-  // Rastgele anahtar oluştur
   const createRandomKey = () => {
     const newKey = generateSecretKey()
     setTempKey(newKey)
   }
 
-  // Şifreli yedekleme
   const exportEncryptedBackup = () => {
     if (!secretKey) {
       alert('Önce şifreleme anahtarı ayarlayın!')
       return
     }
-    
     const backupData = { categories, sessions, exportDate: new Date().toISOString() }
     const encrypted = encryptBackup(backupData, secretKey)
-    
     if (encrypted) {
       const blob = new Blob([encrypted], { type: 'text/plain' })
       const a = document.createElement('a')
@@ -149,21 +233,17 @@ export default function Home() {
     }
   }
 
-  // Şifreli yedeği geri yükle
   const importEncryptedBackup = (event) => {
     const file = event.target.files?.[0]
     if (!file) return
-    
     if (!secretKey) {
       alert('Önce şifreleme anahtarını girin!')
       return
     }
-    
     const reader = new FileReader()
     reader.onload = (e) => {
       const encrypted = e.target.result
       const decrypted = decryptBackup(encrypted, secretKey)
-      
       if (decrypted) {
         if (decrypted.categories) setCategories(decrypted.categories)
         if (decrypted.sessions) setSessions(decrypted.sessions)
@@ -237,13 +317,121 @@ export default function Home() {
   const deleteSession = (id) => {
     if (!confirm('Bu oturumu silmek istediğinize emin misiniz?')) return
     setSessions(sessions.filter(s => s.id !== id))
-    if (currentSession?.id === id) {
-      setCurrentSession(null)
-    }
+    if (currentSession?.id === id) setCurrentSession(null)
   }
 
   const selectedCat = currentSession?.categories.find(c => c.id === selectedCatId)
 
+  // 🔐 LOGIN EKRANI
+  if (!isLoggedIn) {
+    return (
+      <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+        <div style={{ background: 'white', borderRadius: '24px', padding: '40px', width: '100%', maxWidth: '400px', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}>
+          
+          {/* Logo */}
+          <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+            <div style={{ width: '80px', height: '80px', background: 'linear-gradient(135deg, #c9a962, #b8960f)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px', margin: '0 auto 16px' }}>👔</div>
+            <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#1a1a2e', margin: '0 0 4px' }}>Executive Mentor</h1>
+            <p style={{ color: '#718096', fontSize: '14px', margin: 0 }}>Liderlik Koçluk Platformu</p>
+          </div>
+
+          {/* İlk Şifre Belirleme */}
+          {isFirstLogin ? (
+            <div>
+              <div style={{ background: '#fef9e7', border: '1px solid #c9a962', borderRadius: '12px', padding: '16px', marginBottom: '24px' }}>
+                <div style={{ fontWeight: '600', color: '#92400e', marginBottom: '4px' }}>🔐 İlk Kurulum</div>
+                <div style={{ fontSize: '13px', color: '#a16207' }}>Süper Admin şifrenizi belirleyin</div>
+              </div>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4a5568', marginBottom: '6px' }}>Yeni Şifre</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="En az 6 karakter"
+                  style={{ padding: '14px', fontSize: '15px' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4a5568', marginBottom: '6px' }}>Şifre Tekrar</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Şifreyi tekrar girin"
+                  style={{ padding: '14px', fontSize: '15px' }}
+                />
+              </div>
+
+              {loginError && (
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+                  ⚠️ {loginError}
+                </div>
+              )}
+
+              <button
+                onClick={handleSetPassword}
+                style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #c9a962, #b8960f)', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Şifreyi Kaydet ve Devam Et
+              </button>
+            </div>
+          ) : (
+            /* Normal Login */
+            <div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4a5568', marginBottom: '6px' }}>Email</label>
+                <input
+                  type="email"
+                  className="input"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="admin@example.com"
+                  style={{ padding: '14px', fontSize: '15px' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: '600', color: '#4a5568', marginBottom: '6px' }}>Şifre</label>
+                <input
+                  type="password"
+                  className="input"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  style={{ padding: '14px', fontSize: '15px' }}
+                  onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
+                />
+              </div>
+
+              {loginError && (
+                <div style={{ background: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+                  ⚠️ {loginError}
+                </div>
+              )}
+
+              <button
+                onClick={handleLogin}
+                style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
+              >
+                Giriş Yap
+              </button>
+              
+              <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '12px', color: '#a0aec0' }}>
+                🔐 KVKK Uyumlu | AES-256 Şifreleme
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 🏠 ANA UYGULAMA (Login sonrası)
   return (
     <div style={{ minHeight: '100vh', paddingBottom: '80px' }}>
       <header style={{ background: 'linear-gradient(135deg, #4a5568, #2d3748)', color: 'white', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 100 }}>
@@ -252,12 +440,12 @@ export default function Home() {
             <div style={{ width: '40px', height: '40px', background: 'linear-gradient(135deg, #c9a962, #b8960f)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>👔</div>
             <div>
               <div style={{ fontWeight: '600', fontSize: '16px' }}>Executive Mentor</div>
-              <div style={{ fontSize: '11px', opacity: 0.8 }}>Liderlik Koçluk Platformu</div>
+              <div style={{ fontSize: '11px', opacity: 0.8 }}>{currentUser?.email}</div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {isEncrypted && <span style={{ fontSize: '16px' }} title="Şifreleme Aktif">🔐</span>}
-            <span style={{ padding: '4px 12px', background: totalWeight === 48 ? 'rgba(104,211,145,0.3)' : 'rgba(252,129,129,0.3)', borderRadius: '12px', fontSize: '12px' }}>{totalWeight}/48</span>
+            <button onClick={handleLogout} style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '8px', color: 'white', fontSize: '12px', cursor: 'pointer' }}>Çıkış</button>
           </div>
         </div>
       </header>
@@ -363,7 +551,7 @@ export default function Home() {
               <div className="card" style={{ textAlign: 'center', padding: '40px' }}>
                 <div style={{ fontSize: '50px', marginBottom: '16px' }}>📊</div>
                 <h3>Analiz için oturum seçin</h3>
-                <p style={{ color: '#718096' }}>Panel'den bir oturum seçin veya yeni oturum başlatın</p>
+                <p style={{ color: '#718096' }}>Panel'den bir oturum seçin</p>
               </div>
             ) : stats && (
               <>
@@ -394,6 +582,20 @@ export default function Home() {
         {/* SETTINGS */}
         {tab === 'settings' && (
           <div>
+            {/* Kullanıcı Bilgisi */}
+            <div className="card">
+              <h3 style={{ color: '#c9a962', marginBottom: '16px' }}>👤 Kullanıcı Bilgisi</h3>
+              <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '50px', height: '50px', background: 'linear-gradient(135deg, #667eea, #764ba2)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', color: 'white' }}>👤</div>
+                  <div>
+                    <div style={{ fontWeight: '600' }}>{currentUser?.email}</div>
+                    <div style={{ fontSize: '12px', color: '#059669', background: '#d1fae5', padding: '2px 8px', borderRadius: '10px', display: 'inline-block', marginTop: '4px' }}>Süper Admin</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Şifreleme Ayarları */}
             <div className="card">
               <h3 style={{ color: '#c9a962', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -403,27 +605,20 @@ export default function Home() {
               
               <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '13px' }}>
                 <strong>🛡️ KVKK Uyumlu Şifreleme</strong><br/>
-                <span style={{ color: '#718096' }}>Kişisel veriler (ad, soyad, unvan, şirket) AES-256 ile şifrelenir. Veriler Türkiye dışına çıksa bile okunamaz.</span>
+                <span style={{ color: '#718096' }}>Kişisel veriler AES-256 ile şifrelenir.</span>
               </div>
               
               {!isEncrypted ? (
                 <div>
                   <label style={{ fontSize: '12px', color: '#718096' }}>Şifreleme Anahtarı (min 8 karakter)</label>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                    <input 
-                      className="input" 
-                      type="password"
-                      value={tempKey} 
-                      onChange={e => setTempKey(e.target.value)} 
-                      placeholder="Güçlü bir anahtar girin..."
-                      style={{ flex: 1 }}
-                    />
+                    <input className="input" type="password" value={tempKey} onChange={e => setTempKey(e.target.value)} placeholder="Güçlü bir anahtar girin..." style={{ flex: 1 }} />
                     <button onClick={createRandomKey} className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }}>🎲 Oluştur</button>
                   </div>
                   {tempKey && (
                     <div style={{ marginTop: '8px', padding: '8px', background: '#fef9e7', borderRadius: '6px', fontSize: '11px', wordBreak: 'break-all' }}>
                       <strong>Anahtar:</strong> {tempKey}
-                      <div style={{ color: '#dc2626', marginTop: '4px' }}>⚠️ Bu anahtarı güvenli bir yere kaydedin! Kaybederseniz verilerinize erişemezsiniz.</div>
+                      <div style={{ color: '#dc2626', marginTop: '4px' }}>⚠️ Bu anahtarı güvenli bir yere kaydedin!</div>
                     </div>
                   )}
                   <button onClick={saveSecretKey} className="btn btn-primary" style={{ width: '100%', marginTop: '12px' }}>🔐 Şifrelemeyi Aktifleştir</button>
@@ -432,7 +627,6 @@ export default function Home() {
                 <div style={{ textAlign: 'center', padding: '20px', background: '#f0fdf4', borderRadius: '8px' }}>
                   <div style={{ fontSize: '40px', marginBottom: '8px' }}>✅</div>
                   <div style={{ fontWeight: '600', color: '#059669' }}>Şifreleme Aktif</div>
-                  <div style={{ fontSize: '12px', color: '#718096' }}>Tüm kişisel veriler şifrelenerek saklanıyor</div>
                 </div>
               )}
             </div>
@@ -440,38 +634,18 @@ export default function Home() {
             {/* Yedekleme */}
             <div className="card">
               <h3 style={{ color: '#c9a962', marginBottom: '16px' }}>💾 Şifreli Yedekleme</h3>
-              
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <button onClick={exportEncryptedBackup} className="btn btn-primary" disabled={!isEncrypted}>
-                  📤 Şifreli Yedek İndir
-                </button>
+                <button onClick={exportEncryptedBackup} className="btn btn-primary" disabled={!isEncrypted}>📤 Şifreli Yedek İndir</button>
                 <label className="btn btn-secondary" style={{ cursor: isEncrypted ? 'pointer' : 'not-allowed', opacity: isEncrypted ? 1 : 0.5 }}>
                   📥 Şifreli Yedek Yükle
                   <input type="file" accept=".enc" style={{ display: 'none' }} onChange={importEncryptedBackup} disabled={!isEncrypted} />
                 </label>
               </div>
-              
               {!isEncrypted && (
                 <div style={{ marginTop: '12px', padding: '10px', background: '#fef3c7', borderRadius: '6px', fontSize: '12px', color: '#92400e' }}>
-                  ⚠️ Şifreli yedekleme için önce şifreleme anahtarı ayarlayın
+                  ⚠️ Önce şifreleme anahtarı ayarlayın
                 </div>
               )}
-            </div>
-
-            {/* Hakkında */}
-            <div className="card">
-              <h3 style={{ color: '#c9a962', marginBottom: '12px' }}>ℹ️ Hakkında</h3>
-              <div style={{ fontSize: '13px', color: '#718096' }}>
-                <p><strong>Executive Mentor & Coaching Platform</strong></p>
-                <p>Profesyonel liderlik koçluğu ve yönetici değerlendirme sistemi.</p>
-                <ul style={{ marginTop: '10px', paddingLeft: '20px' }}>
-                  <li>✅ AES-256 Şifreleme</li>
-                  <li>✅ KVKK / GDPR Uyumlu</li>
-                  <li>✅ Şifreli Yedekleme</li>
-                  <li>✅ Responsive Tasarım</li>
-                </ul>
-                <p style={{ marginTop: '12px', color: '#c9a962' }}>© 2024 MFK Danışmanlık</p>
-              </div>
             </div>
           </div>
         )}
